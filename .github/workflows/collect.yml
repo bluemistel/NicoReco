@@ -1,0 +1,115 @@
+name: collect
+
+# 毎日ランキングを拾って候補プールを更新し、静的JSONをコミットする。
+# Snapshot API は CORS ヘッダを返さないので、取得は必ずここ側で行う。
+#
+# 公開は Cloudflare Pages が担当する。
+# ここが web/public/data を更新してコミットすると、
+# Cloudflare 側がその push を拾ってビルドする。
+
+on:
+  schedule:
+    # 06:10 JST
+    - cron: '10 21 * * *'
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'タグ深掘りも行う場合はタグ名（スペース区切り）'
+        required: false
+        default: ''
+      max_per_tag:
+        description: '1タグあたりの取得上限'
+        required: false
+        default: '1000'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 収集用のSQLiteはリポジトリに置かない（80MB超）。
+      # 普段はキャッシュで持ち越す。速いが、7日間使われないと消える。
+      - name: Restore corpus (cache)
+        uses: actions/cache@v4
+        with:
+          path: data/nico.db
+          key: nico-db-${{ github.run_id }}
+          restore-keys: |
+            nico-db-
+
+      # キャッシュが無かったときの保険。
+      # ランキングの観測履歴だけは後から取り直せないので、
+      # リリースに置いたバックアップから戻す。
+      - name: Restore corpus (release backup)
+        run: |
+          if [ -f data/nico.db ]; then
+            echo "キャッシュから復元しました"
+            exit 0
+          fi
+
+          mkdir -p data
+
+          if gh release download corpus --pattern 'nico.db.gz' --dir data; then
+            gunzip -f data/nico.db.gz
+            echo "リリースのバックアップから復元しました"
+          else
+            echo "バックアップがありません。ランキングから作り直します"
+          fi
+
+      - name: Collect ranking
+        run: python collector/collect.py ranking --terms 24h week month
+
+      - name: Deepen tags
+        if: inputs.tags != ''
+        run: |
+          python collector/collect.py tags \
+            --tag ${{ inputs.tags }} \
+            --max ${{ inputs.max_per_tag }}
+
+      - name: Export pool
+        run: python collector/export_pool.py --size 8000
+
+      - name: Show stats
+        run: python collector/collect.py stats
+
+      - name: Commit data
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add web/public/data
+          if git diff --cached --quiet; then
+            echo '変更なし'
+          else
+            git commit -m "data: 候補プールを更新 ($(date -u +%Y-%m-%d))"
+            git push
+          fi
+
+      # 圧縮して `corpus` タグのリリースに上書きアップロードする。
+      # 常に最新の1つだけが残るので、容量も管理も増えない。
+      - name: Back up corpus
+        run: |
+          gzip -c data/nico.db > nico.db.gz
+          ls -lh nico.db.gz
+
+          gh release view corpus >/dev/null 2>&1 || \
+            gh release create corpus \
+              --title '収集コーパス' \
+              --notes '収集用SQLiteのバックアップ。毎日上書きされます。'
+
+          gh release upload corpus nico.db.gz --clobber

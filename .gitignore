@@ -1,0 +1,17 @@
+# 収集用のSQLite。サイズが大きいのでリポジトリには入れない。
+# 配布するのは export_pool.py が書き出す web/public/data/*.json のほう。
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+.claude/
+node_modules/
+web/dist/
+web/.astro/
+.DS_Store
+__pycache__/
+*.pyc
+
+# 好みプロファイルの書き出し
+nicoreco-profile.json

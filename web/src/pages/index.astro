@@ -1,0 +1,270 @@
+---
+import '../styles/global.css';
+import { SITE } from '../config';
+
+const contactHref = SITE.contact.url;
+---
+
+<!doctype html>
+<html lang="ja" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NicoReco — 音声合成実況・解説・劇場の観測室</title>
+    <meta
+      name="description"
+      content="ニコニコ動画のランキングを起点に、評価を重ねて自分の好みの重みを育てる推薦システム。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@400;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+    />
+  </head>
+
+  <body>
+    <header class="masthead">
+      <div class="masthead-row">
+        <h1 class="masthead-title">Nico<span>Reco</span></h1>
+        <p class="masthead-sub">
+          <span id="genre-label">—</span> ／ 候補 <span id="pool-size">—</span>
+          ／ 収集 <span id="generated-at">—</span>
+        </p>
+        <span class="masthead-spacer"></span>
+        <button id="theme-toggle" class="ghost-button" type="button">
+          自動
+        </button>
+      </div>
+
+      <p class="beta-notice">
+        <span class="beta-badge">β</span>
+        このサイトはβ版公開です。予告なく運用を停止する可能性があります。
+      </p>
+    </header>
+
+    <p class="status" id="status">起動中…</p>
+
+    <div class="stage">
+      <section class="feed">
+        <div class="feed-head">
+          <div class="batch-mark">
+            <em>batch</em>
+            <strong id="batch-no">00</strong>
+            <em id="batch-count">—</em>
+          </div>
+          <button id="next-batch" class="solid-button" type="button">
+            次のバッチへ
+          </button>
+        </div>
+
+        <ol class="cards" id="cards"></ol>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-block">
+          <p class="section-label">学習状況</p>
+
+          <dl class="readouts">
+            <div class="readout">
+              <dt>評価した本数</dt>
+              <dd id="stat-rated" class="num">0</dd>
+            </div>
+            <div class="readout">
+              <dt>モデル更新</dt>
+              <dd id="stat-steps" class="num">0</dd>
+            </div>
+            <div class="readout">
+              <dt>予測のズレ</dt>
+              <dd id="stat-error" class="num">—</dd>
+            </div>
+            <div class="readout">
+              <dt>残り候補</dt>
+              <dd id="stat-remaining" class="num">—</dd>
+            </div>
+            <div class="readout">
+              <dt>保留中</dt>
+              <dd id="stat-deferred" class="num">0</dd>
+            </div>
+            <div class="readout">
+              <dt>除外した本数</dt>
+              <dd id="stat-blocked" class="num">0</dd>
+            </div>
+          </dl>
+
+          <div class="control">
+            <div class="control-head">
+              <label for="exploration">探索の強さ</label>
+              <b><span id="exploration-value">55</span></b>
+            </div>
+            <input id="exploration" type="range" min="0" max="100" step="5" />
+            <p class="control-note">
+              下げると好み一直線、上げるとまだ見ていない傾向を混ぜます。
+            </p>
+          </div>
+
+          <div class="control">
+            <div class="control-head">
+              <label for="from-year">対象範囲</label>
+              <b><span id="from-year-value">—</span>年〜</b>
+            </div>
+            <input id="from-year" type="range" step="1" />
+            <p class="control-note">
+              好みが固まってきたら、ここを下げて過去へ広げます。
+            </p>
+          </div>
+        </div>
+
+        <div class="panel-block">
+          <p class="section-label">いまの好み</p>
+          <div class="weights" id="weights"></div>
+        </div>
+
+        <div class="panel-block">
+          <p class="section-label">除外したタグ</p>
+          <div class="user-list" id="blocked-tags"></div>
+        </div>
+
+        <div class="panel-block">
+          <p class="section-label">お気に入り投稿者</p>
+          <div class="user-list" id="favorites"></div>
+        </div>
+
+        <div class="panel-block">
+          <p class="section-label">除外した投稿者</p>
+          <div class="user-list" id="blocked"></div>
+        </div>
+
+        <div class="panel-block">
+          <p class="section-label">プロファイル</p>
+          <p class="hint">
+            評価と重みはこの端末の中だけに保存されます。
+            「候補をリセット」は好みを残したまま、見た記録だけを消します。
+          </p>
+          <div class="button-row" style="margin-top:10px">
+            <button id="reset-candidates" class="ghost-button" type="button">
+              候補をリセット
+            </button>
+            <button id="export" class="ghost-button" type="button">
+              書き出し
+            </button>
+            <button id="import" class="ghost-button" type="button">
+              読み込み
+            </button>
+            <button id="reset" class="ghost-button" type="button">
+              やり直す
+            </button>
+            <input
+              id="import-file"
+              type="file"
+              accept="application/json"
+              hidden
+            />
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="colophon">
+      <div class="colophon-grid">
+        <section>
+          <h2>このサイトについて</h2>
+          <p>
+            ニコニコ動画の「音声合成実況・解説・劇場」ジャンルから、
+            自分の好みに合う動画を探すための個人サイトです。
+            評価を重ねると好みの重みが育ち、候補の並びが変わります。
+            評価・重み・お気に入りはこの端末の中だけに保存され、
+            どこにも送信されません。
+          </p>
+          <p>
+            キーボードでも操作できます —
+            <code>1</code>〜<code>5</code> で星、
+            <code>0</code> か <code>s</code> で保留、
+            <code>f</code> で投稿者をお気に入り、
+            <code>b</code> で投稿者を除外。
+            タグは左クリックでお気に入り、右クリックで除外。
+          </p>
+        </section>
+
+        <section>
+          <h2>免責</h2>
+          <p>
+            <strong>本サイトは個人が制作・運営する非公式のものです。</strong>
+            株式会社ドワンゴおよび niconico とは一切関係がありません。
+            運営の責任は制作者にあります。
+            <strong>β版公開のため、予告なく運用を停止する場合があります。</strong>
+          </p>
+          <p>
+            動画の情報は「スナップショット検索API v2」から取得したもので、
+            1日1回更新されます。表示内容の正確性・完全性は保証できません。
+            サムネイルはニコニコ動画のサーバーから直接読み込んでいます。
+            営利目的では運営していません。
+          </p>
+        </section>
+
+        <section>
+          <h2>投稿者名を表示していない理由</h2>
+          <p>
+            表示名やアイコンを返すのは非公式の内部APIで、
+            それらを集めて配ることは
+            APIの利用規約が禁じる「個人に関する情報の収集、蓄積行為」に
+            あたりうるためです。本サイトは投稿者名を持っていません。
+            カードの「投稿者」からニコニコ動画側へ移動すると、
+            そこで投稿者名と作品一覧を確認できます。
+          </p>
+        </section>
+
+        <section>
+          <h2>掲載を希望されない方へ</h2>
+          <p>
+            ご自身の動画を掲載しないでほしいというご連絡をいただければ、
+            対象の動画または投稿者の作品すべてを候補から外します。
+            次回の更新（毎日1回）で反映されます。
+          </p>
+          <p>
+            動画のURL、または投稿者ページのURLを添えて、
+            下記の連絡先までお知らせください。理由は不要です。
+          </p>
+        </section>
+
+        <section>
+          <h2>制作者</h2>
+          <dl class="colophon-meta">
+            <div>
+              <dt>制作・運営</dt>
+              <dd>{SITE.author}</dd>
+            </div>
+            <div>
+              <dt>連絡先</dt>
+              <dd>
+                {contactHref ? (
+                  <a href={contactHref} rel="noopener noreferrer">
+                    {SITE.contact.label}
+                  </a>
+                ) : (
+                  SITE.contact.label
+                )}
+              </dd>
+            </div>
+            {SITE.repository && (
+              <div>
+                <dt>ソース</dt>
+                <dd>
+                  <a
+                    href={SITE.repository}
+                    target="_blank"
+                    rel="noopener noreferrer">リポジトリ</a>
+                </dd>
+              </div>
+            )}
+          </dl>
+        </section>
+      </div>
+    </footer>
+
+    <script>
+      import { boot } from '../lib/app';
+      boot();
+    </script>
+  </body>
+</html>
