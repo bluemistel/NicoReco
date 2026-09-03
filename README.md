@@ -248,18 +248,35 @@ Web側からは収集を促すUIを一切出していない。
 作品取り込み）はCLIには残っているが、**使うとプールがその人の好みに寄る**。
 公開サイト用のプールを作る間は、`ranking` と `tags` だけで回すのが筋。
 
-## デプロイ（Cloudflare Pages）
+## デプロイ（Cloudflare Workers）
 
-配信するのは `web/dist`（HTML/CSS/JS ＋ `data/*.json` で 2.5MB 前後）。
+配信するのは `web/dist`（HTML/CSS/JS ＋ `data/*.json` で 2.3MB 前後）。
+Workers の静的アセット配信としてデプロイする。
 
-リポジトリを Cloudflare Pages に繋いで、
+設定はダッシュボードではなく `web/wrangler.jsonc` に置いてある。
+
+```jsonc
+{
+  "name": "nicoreco",
+  "compatibility_date": "2026-09-03",
+  "assets": { "directory": "./dist" }
+}
+```
+
+Worker スクリプトは持たず、アセットだけを配る構成。
+`name` はダッシュボード側の Worker 名と一致させること
+（食い違うと別の Worker が新しく作られる）。
+
+Workers Builds の設定は3つだけ。
 
 | 項目 | 値 |
 |---|---|
 | ルートディレクトリ | `web` |
 | ビルドコマンド | `npm ci && npm run build` |
-| 出力ディレクトリ | `dist` |
-| 環境変数 | `NODE_VERSION=22`（`BASE_PATH` は設定しない） |
+| デプロイコマンド | `npx wrangler deploy`（既定のまま） |
+
+Node のバージョンは `web/.node-version` で固定しているので、
+ビルド変数の設定は要らない。
 
 `.github/workflows/collect.yml` が毎日 `web/public/data` を更新して
 コミットし、Cloudflare 側がその push を拾ってビルドする。
@@ -269,8 +286,8 @@ GitHub Actions 側にデプロイ用のワークフローは要らない。
 
 | | 上限 | この構成での消費 |
 |---|---|---|
-| Cloudflare Pages ビルド | 500回/月 | 日1回で約30回 |
-| 1デプロイのファイル数 | 20,000 | 約25ファイル |
+| Cloudflare のビルド | 500回/月 | 日1回で約30回 |
+| 1デプロイのファイル数 | 20,000 | 23ファイル |
 | 1ファイルの最大 | 25 MiB | 最大でも1MB未満 |
 | GitHub Actions | 公開リポジトリは無料 | collect が1日数分 |
 

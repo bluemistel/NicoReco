@@ -1,0 +1,18 @@
+{
+  // Cloudflare Workers の静的アセット配信としてデプロイする設定。
+  //
+  // Workers Builds のルートディレクトリを `web` にしてあるので、
+  // ビルドもデプロイもこのディレクトリで実行される。
+  //
+  // ダッシュボード側の Worker 名と `name` を一致させること。
+  // 食い違うと、別の Worker が新しく作られてしまう。
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nicoreco",
+  "compatibility_date": "2026-09-03",
+
+  // Astro が書き出す静的ファイルをそのまま配る。
+  // Worker スクリプトは持たない（アセットのみ）。
+  "assets": {
+    "directory": "./dist"
+  }
+}
