@@ -361,6 +361,8 @@ def main():
                         help="欠けている動画長を取りに行かない")
     parser.add_argument("--no-verify", action="store_true",
                         help="公開が続いているかの確認を省略する")
+    parser.add_argument("--allow-shrink", action="store_true",
+                        help="候補が大きく減っていても書き出す")
 
     args = parser.parse_args()
 
@@ -412,6 +414,24 @@ def main():
         selected, ranked = select_pool(
             conn, args.size, args.per_user_cap, args.seed, optout
         )
+
+    # 収集用のDBを失った状態で走ると、ランキング分だけの小さなプールが
+    # できあがり、それを配ってしまう。既存の書き出しより大幅に減っていたら
+    # 事故とみなして中断する。
+    index_path = Path(args.out) / "index.json"
+
+    if index_path.exists() and not args.allow_shrink:
+
+        previous = json.loads(
+            index_path.read_text(encoding="utf-8")
+        ).get("total", 0)
+
+        if previous and len(selected) < previous * 0.7:
+            raise RuntimeError(
+                f"候補が {previous:,}件 から {len(selected):,}件 へ大きく減りました。"
+                " 収集用DBが失われている可能性があります。"
+                " 意図した縮小なら --allow-shrink を付けてください。"
+            )
 
     by_year = defaultdict(list)
 
