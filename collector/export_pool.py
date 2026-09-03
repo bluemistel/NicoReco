@@ -155,6 +155,42 @@ def verify_alive(conn, content_ids):
     return alive, gone
 
 
+def fill_gaps(conn, args, optout, rounds=3):
+    """欠けている項目を埋めてから選び直す、を落ち着くまで繰り返す。
+
+    埋めると再生数などが更新され、選抜の顔ぶれが少し入れ替わる。
+    入れ替わりで新たに入ったレコードがまた欠けていることがあるので、
+    1回では終わらない。
+    """
+
+    selected, ranked = select_pool(
+        conn, args.size, args.per_user_cap, args.seed, optout
+    )
+
+    for _ in range(rounds):
+
+        missing = [
+            row[0] for row in selected
+            if row[9] is None or row[10] is None
+        ]
+
+        if not missing:
+            break
+
+        print(
+            f"動画長／サムネイルが欠けている {len(missing):,}件を取得",
+            flush=True,
+        )
+
+        collect.hydrate(conn, missing, source="export", detail="length")
+
+        selected, ranked = select_pool(
+            conn, args.size, args.per_user_cap, args.seed, optout
+        )
+
+    return selected, ranked
+
+
 def quality(view, mylist, like, comment):
     """再生数の絶対値ではなく「濃さ」で並べるための素点。
 
@@ -375,31 +411,15 @@ def main():
             f"掲載除外: 動画 {len(optout[0])}件 / 投稿者 {len(optout[1])}人"
         )
 
-    selected, ranked = select_pool(
-        conn, args.size, args.per_user_cap, args.seed, optout
-    )
+    if args.no_backfill:
+        selected, ranked = select_pool(
+            conn, args.size, args.per_user_cap, args.seed, optout
+        )
+    else:
+        # 既存DB由来のレコードは動画長もサムネイルも持っていない
+        selected, ranked = fill_gaps(conn, args, optout)
 
     print(f"候補 {len(selected):,}件を選択")
-
-    # 動画長が欠けているものを埋める（既存DB由来のレコード）
-    if not args.no_backfill:
-
-        missing = [
-            row[0] for row in selected
-            if row[9] is None or row[10] is None
-        ]
-
-        if missing:
-
-            print(f"動画長／サムネイルが欠けている {len(missing):,}件を取得")
-
-            collect.hydrate(
-                conn, missing, source="export", detail="length"
-            )
-
-            selected, ranked = select_pool(
-                conn, args.size, args.per_user_cap, args.seed, optout
-            )
 
     # 削除・非公開になった動画を落とす。
     # 配る前に必ず通す（消したものが残り続けないように）。
@@ -409,11 +429,16 @@ def main():
 
         alive, gone = verify_alive(conn, [row[0] for row in selected])
 
-        print(f"  取得できなくなっていた {len(gone):,}件を削除")
+        print(f"  取得できなくなっていた {len(gone):,}件を削除", flush=True)
 
-        selected, ranked = select_pool(
-            conn, args.size, args.per_user_cap, args.seed, optout
-        )
+        # 消えたぶんの枠が埋め直され、そこにまた未取得のレコードが
+        # 入りうるので、確認のあとにもう一度そろえる
+        if args.no_backfill:
+            selected, ranked = select_pool(
+                conn, args.size, args.per_user_cap, args.seed, optout
+            )
+        else:
+            selected, ranked = fill_gaps(conn, args, optout)
 
     # 収集用のDBを失った状態で走ると、ランキング分だけの小さなプールが
     # できあがり、それを配ってしまう。既存の書き出しより大幅に減っていたら
