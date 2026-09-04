@@ -53,21 +53,45 @@ jobs:
           restore-keys: |
             nico-db-
 
-      # キャッシュが無かったときの保険。
+      # キャッシュが無かった／中身が痩せていたときの保険。
       # ランキングの観測履歴だけは後から取り直せないので、
       # リリースに置いたバックアップから戻す。
+      #
+      # キャッシュの中身は信用しない。コーパスを持たない状態で1度でも
+      # 走ると、ランキング分だけの小さなDBがキャッシュに残り、
+      # 以降それが復元され続けてしまうため。
       - name: Restore corpus (release backup)
         run: |
-          if [ -f data/nico.db ]; then
+          mkdir -p data
+
+          count=$(python -c "
+          import os, sqlite3
+          if not os.path.exists('data/nico.db'):
+              print(0)
+          else:
+              try:
+                  conn = sqlite3.connect('data/nico.db')
+                  print(conn.execute('SELECT COUNT(*) FROM videos').fetchone()[0])
+              except Exception:
+                  print(0)
+          ")
+
+          echo "キャッシュのコーパス: ${count}本"
+
+          if [ "$count" -ge 5000 ]; then
             echo "キャッシュから復元しました"
             exit 0
           fi
 
-          mkdir -p data
+          rm -f data/nico.db
 
-          if gh release download corpus --pattern 'nico.db.gz' --dir data; then
+          if gh release download corpus --pattern 'nico.db.gz' --dir data --clobber; then
             gunzip -f data/nico.db.gz
-            echo "リリースのバックアップから復元しました"
+            restored=$(python -c "
+          import sqlite3
+          print(sqlite3.connect('data/nico.db').execute('SELECT COUNT(*) FROM videos').fetchone()[0])
+          ")
+            echo "リリースのバックアップから復元しました: ${restored}本"
           else
             echo "バックアップがありません。ランキングから作り直します"
           fi
@@ -102,8 +126,17 @@ jobs:
 
       # 圧縮して `corpus` タグのリリースに上書きアップロードする。
       # 常に最新の1つだけが残るので、容量も管理も増えない。
+      # 痩せたDBでバックアップを上書きしてしまわないよう、
+      # 十分な件数があるときだけ差し替える。
       - name: Back up corpus
         run: |
+          count=$(python -c "import sqlite3;print(sqlite3.connect('data/nico.db').execute('SELECT COUNT(*) FROM videos').fetchone()[0])")
+
+          if [ "$count" -lt 5000 ]; then
+            echo "コーパスが ${count}本 しかないためバックアップを更新しません"
+            exit 0
+          fi
+
           gzip -c data/nico.db > nico.db.gz
           ls -lh nico.db.gz
 
