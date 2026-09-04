@@ -84,6 +84,27 @@ def load_optout():
     return videos, users
 
 
+def is_theater(tags):
+    """劇場形式の動画かどうか。
+
+    このサイトは「ソフトウェアトーク劇場 / VOICEROID劇場」系の
+    建て付けなので、候補はそれに絞る。ランキング掲載歴があっても、
+    実況・車載・料理などは対象にしない。
+
+    判定は「劇場」を含むタグが1つでもあるか。列挙にしないのは、
+    DB内に劇場を含むタグが648種類あり、大文字小文字の揺れ
+    （VOICEROID劇場 / voiceroid劇場）や派生
+    （ボイロ一人称劇場・ホラーボイロ劇場・ゆかきり劇場）を
+    追いきれないため。「劇場版」は映画の話なので除く。
+    """
+
+    for tag in (tags or "").split():
+        if "劇場" in tag and "劇場版" not in tag:
+            return True
+
+    return False
+
+
 def verify_alive(conn, content_ids):
     """まだ公開されている動画かどうかを確かめる。
 
@@ -272,7 +293,9 @@ def select_pool(conn, size, per_user_cap, seed, optout=None):
 
         rows = [
             row for row in rows
-            if row[0] not in opt_videos and (row[3] or "") not in opt_users
+            if row[0] not in opt_videos
+            and (row[3] or "") not in opt_users
+            and is_theater(row[2])
         ]
 
         if not rows:
@@ -347,9 +370,10 @@ def select_pool(conn, size, per_user_cap, seed, optout=None):
                 ).fetchall()
             )
 
+        # ランキング掲載歴があっても、劇場系でないものは入れない
         selected = [
             row for row in selected
-            if (row[3] or "") not in opt_users
+            if (row[3] or "") not in opt_users and is_theater(row[2])
         ]
 
     return selected, ranked
